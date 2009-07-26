@@ -29,15 +29,16 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-$REVISION = '$Id: Sun Jul 19 11:15:45 CDT 2009 $'; 
+$REVISION = '$Id$';
 
 
 sub usage()
 {
 #   $REVISION =~ /^\$Id: .+? (.*) .+? \$/;
-    $REVISION =~ /^\$Id: (.*) \$/;
+#   $REVISION =~ /^\$Id: (.*) \$/;
 
-    my $rev = $1;
+#   my $rev = $1;
+    my $rev = $REVISION;
 
     print <<EOM;
 
@@ -79,6 +80,28 @@ sub format_number($$)
 {
     if ($_[1]) { return(sprintf($_[1], $_[0])) }
     else { return($_[0]) }
+}
+
+
+# $value = number($string)
+# If $string contains a numerical value, then return the raw value.
+# Otherwise, return undefined.
+# Recognized formats: nn, nn.nn, $nn.nn, $ nn.nn, -nn, +nn
+#                     -$nn.nn, $-nn.nn, n,nnn.nn
+#
+sub number($)
+{
+    my $value;
+
+    if ($_[0] =~ /^[+-]? ?\$? ?[+-]? ?(\d+(,\d{3})*(\.\d+)?)$/)
+        {
+        $value = $1;
+        $value =~ s/,//g;  # Remove any commas
+        if ($_[0] =~ /^\$? ?- ?/) { $value = -$value }
+        return($value);
+        }
+    else { 
+        return(undef); }
 }
 
 
@@ -212,16 +235,8 @@ line:
                 }
 
             # Numerical value field
-            # Recognized formats: nn, nn.nn, $nn.nn, $ nn.nn, -nn, +nn
-            #                     -$nn.nn, n,nnn.nn
-            elsif (/^[+-]? ?\$? ?(\d+(,\d{3})*(\.\d+)?)$/)
-                {
-                $value = $1;
-                $value =~ s/,//g;  # Remove any commas
-
-                if (/^-/) { $value = -$value }
-                add($value);
-                }
+            elsif (defined($value = number($_))) {
+                add($value); }
 
             # $total#, $total, $t, $t#,
             # $subtotal#, $subtotal, $st, $st#
