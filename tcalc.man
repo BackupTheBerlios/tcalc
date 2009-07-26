@@ -1,0 +1,483 @@
+*NAME*
+    tcalc -- Text Calculator     
+
+*SYNOPSIS*
+    tcalc file1 [file2 ...]
+    cat file1 [file2 ...] | tcalc
+
+*DESCRIPTION*
+    *tcalc* is a simple text based ledger/spreadsheet calculator.  
+
+    It allows you to create your own custom forms, ledgers, and spreadsheets as
+    plain text files and to be able to do all your accounting using the full
+    power of your favorite text editor.  It would also be simple to automate
+    adding accounting data using external scripts.
+ 
+    The file format is completely flexible free-form text.  It automatically
+    adds both rows and columns of numerical fields and displays the totals
+    wherever in the file you choose.  Fields may contain arbitrary text,
+    numbers, or expressions using Perl language syntax.
+   
+    *tcalc* operates as a filter.  It reads one or more files as a stream,
+    either from stdin or from files specified on the command line, performs the
+    calculations, and outputs the result to stdout.  The output preserves the
+    original file format but with the total fields and fields with other output
+    expressions expanded.
+
+    Of course, *tcalc* is not limited to monetary applications.  It can be
+    used for any application where calculations need to be done on groups of
+    numbers.
+
+    It is primarily designed for adding rows and columns of numbers, but also 
+    supports arbitrary mathematical expressions.
+
+*OPTIONS*
+    *-h | --help*
+        Outputs program information and brief usage instructions and exits.
+
+*CONFIGURATION*
+    There are no external configurations.
+
+    There are 3 settings that can be used in the data files.
+    FS       Field separator
+    COLUMN   Default column to expand $total for
+    FORMAT   format string for numerical expansions
+
+    See the *FILE FORMAT* section below for details.
+
+*FILE FORMAT*
+    Data files are free-form plain text files.  There are very few
+    restrictions on the layout.  tcalc views the file contents as rows and
+    columns, numbered from *1 to n*.  Each line of the file is a row.  The rows
+    are separated into fields, delimited by the setting of *FS*.  If not set in
+    the file, the default *field separator* is 2 or more spaces or 1 or more
+    tabs.  The same field on multiple lines is a column.
+
+    Comments beginning with '#' or '//' are ignored and removed from the 
+    processed output.
+
+    Fields may contain a *number*, a *variable* to be expanded, an
+    *expression*, a *statement*, or any *text string*.
+
+    *Numbers:*
+        Numbers in any of these formats will be recognized and included
+        in calculations.
+            nn, nn.nn, $nn.nn, $ nn.nn, -nn, +nn -$nn.nn, n,nnn.nn
+
+    *Variables:*
+        Variables are specified as $varname.  Variables may be assigned to
+        or expanded anywhere in the file.  You may assign values to any valid
+        variable name you wish.  Valid variable names must start with an
+        alphabetic character and can contain alphanumeric characters and 
+        underscores ('_').
+
+        There are 6 built in variables that tcalc populates during processing.
+        It is recommended that you do not assign values to any of them.
+
+            $t | $total
+                This is short and long forms of the same variable.
+
+                $total is a special variable that expands to different values
+                depending on where it is used.
+
+                If placed in a row that contains no numbers in preceding
+                fields, it is the total for the default column.  If *COLUMN*
+                has not been set, it defaults to '*' which is the total of all
+                columns combined.
+
+                If placed in a row that has preceding numerical fields (to the
+                left), it expands to the total for that row.
+
+                If specified with an index, e.g. $total[1], it will expand to
+                the total for that column, no matter where it is placed in the
+                file.  
+
+                Any time $total is accessed in a field by itself, i.e. not part
+                of an expression or text field, it's value is reset to zero.
+                That includes column totals.  e.g. $total[1] would expand to
+                the total for the first column and the total for that column
+                would be reset.
+
+                $total is the only variable that is automatically reset when
+                accessed.
+                
+            $st | $stotal | $subtotal
+                $total may also be accessed via $subtotal.  The only difference
+                is that it's value is not reset.  This also applies to specific
+                columns.  e.g. $subtotal[2].
+
+            $r[]
+                List of totals for each row.
+                e.g. $r2 expands to the total of all numerical fields on the
+                     second line of the input file added together.
+
+            $c[]
+                List of columns (fields) on the current row.
+                Columns to the right may be used in expressions if they
+                have numerical values, but beware, they are evaluated from left
+                to right.  So if you use a column to the right in an
+                expression, and that column also has an expression, the right
+                column will not have been evaluated yet.
+
+                Example:
+                    Lets say you have the following line.
+
+                    10  =$c[1] + $c[4];  20  =$c[3] * 3;  50   $total
+
+                    The output is
+
+                    10  10  20  60  50   150
+
+                    When $c2 is evaluated, $c4 has not been evaluated yet, so
+                    it ends up being 10 + 0 rather than 10 + 60.
+
+            $row
+                The current row (i.e. line number)                
+
+            $col
+                The current column.
+
+        *Note:*
+            The special variables, $t, $r, and $c can be indexed without the
+            '[]' subscript syntax.  In otherwords, $c1 is the same thing
+            as $c[1].  This allows you to minimize the length of expressions
+            if you are working with narrow text fields.
+            Example:
+                The expression "=$c[1] + $c[4];" may also be specified as
+                "=$c1+$c4;"
+
+    *Expressions:*
+        Expressions are similar to *formulas* in traditional spreadsheet
+        programs.  They are used to do some calculation and substitute the 
+        result back into the field.  Expressions follow Perl programming
+        syntax rules except they begin with an equals sign ('=').   All
+        expressions and statements must end with a semicolon (';').  Also
+        they must contain at least one variable to be recognized as an
+        expression.
+
+        Example:  =$c1 + $c2;
+            Evaluates to the value of column 1 + column 2 on the current
+            row (line).
+
+    *Statements:*
+        Statements are similar to expressions except they do not begin 
+        with an equals sign and do not substitute any result back into the
+        field.  Instead, they are deleted from the output.  They are usually
+        used to modify or assign values to variables.  
+        e.g.  $groceries = $total;
+
+        Any single line statement that contains valid Perl syntax can be used.
+        Even "if" statements or multiple statements separated by 
+        semi-colons (';').
+
+        Examples:  
+            $x = $t1; if ($t1 > $t2) { $x = $t2 };
+
+            Or, the same thing, using a conditional statement and full
+            array syntax (using '[]' for the array subscripts).
+
+            $x = ($t[1] > $t[2]) ? $t[2] : $t[1];
+        
+            Remember, as stated above, the '[]' subscript characters may 
+            be omitted only on the special built in variables, $t, $r, and $c.
+
+    *Text:*
+        Text fields have no effect on the calculations.  The only processing
+        done on text fields is variable expansion.  Any variables that have
+        a value are expanded.
+
+        Example:  Total of all columns so far is $total
+
+        When expanded in a text field, $total is not reset.  It is only
+        reset when expanded in it's own field.
+
+        Example:  Total of all columns so far is  $total
+    
+        Notice there are two spaces before $total.  This would move $total
+        into the next field, and cause it to be reset to zero after expansion.
+
+    *Settings:*
+        There are 3 settings that can be set on any line of the file.  They
+        take effect from that point on.  The setting must be the only thing on
+        the line.  Setting names are not case sensitive (they can be in upper
+        or lower case).  They are set like a variable assignment, except no
+        '$' prefix and no trailing semicolon.
+
+        Example:  FS = \s{2,}|\t+\s*
+
+        Spaces on either side of the '=' is optional. 
+    
+        *COL | COLUMN*
+            Sets the default column to add for the value of $total.
+            column=  or  column=*  will reset the default column to all, meaning
+            $total will expand to the sum of all columns.
+            Default = *
+
+            If column = 2 for example, then $total is the same as $total[2]
+
+        *FORMAT | NUMBER_FORMAT*
+            printf style format string to display numbers as a result of
+            variable and expression expansions.  There is no default.
+
+            Example:  FORMAT = $%.2f   # Dollars and cents format
+                      If $total contained 100, the expansion would be $100.00.
+                      
+            If the format string contains leading or trailing spaces, then
+            surround it with quotes.
+
+            The Perl manual on sprintf() covers format details.
+            i.e.  perldoc -f sprintf
+
+        *FS*
+            Field separator 
+            Default = \s{2,}|\t+\s*
+            Regular expression pattern that defines what separates fields
+            on a row.  the default is 2 or more spaces or 1 or more tabs.
+            See the Perl manual on regular expressions.
+            i.e.  man perlre
+
+*EXAMPLES*
+
+    *[Sample file]*
+    
+        format = $%.2f      # Expand totals to $xx.xx format
+
+        Groceries
+        =======================================
+        05/02/2009          42.23       Crest
+        05/11/2009           6.49       Braums
+        05/23/2009          59.72       Walmart
+                            ------
+        Total groceries:    $total
+
+        06/17/2009          16.95       Crest
+        06/23/2009          59.72       Crest
+        06/28/2009           5.00       Braums
+                            ------      $groceries = $total;
+        Total groceries:    $total
+
+
+        Eating out
+        =======================================
+        06/19/2009          21.00       Indian Food
+        06/23/2009           9.00       Furrs
+        06/24/2009           2.15       Wendys
+        06/27/2009           3.25       McDonalds
+                            ------      $eating_out = $total;
+        Total eating out:   $total
+
+        ==================================================
+        Total spent this month:  =$groceries + $eating_out;
+
+    *Output:*
+
+        Groceries
+        =======================================
+        05/02/2009          42.23       Crest
+        05/11/2009           6.49       Braums
+        05/23/2009          59.72       Walmart
+                            ------
+        Total groceries:    $108.44
+
+        06/17/2009          16.95       Crest
+        06/23/2009          59.72       Crest
+        06/28/2009           5.00       Braums
+                            ------      
+        Total groceries:    $81.67
+
+
+        Eating out
+        =======================================
+        06/19/2009          21.00       Indian Food
+        06/23/2009           9.00       Furrs
+        06/24/2009           2.15       Wendys
+        06/27/2009           3.25       McDonalds 
+                            ------      
+        Total eating out:   $35.40
+
+        ==================================================
+        Total spent this month:  $117.07
+
+
+    *[Sample file]*
+
+        Since I did not set the number format, I added my own '$' to
+        the totals.
+
+        Original purchase                                    $900.00
+        Title, taxes, & late penalties                       $129.50
+                                                             -------
+                                                             $$subtotal
+        Maintenance and repairs
+        -----------------------
+        tail lights, side mirrors, etc                         66.00
+        oil drain plug                                          3.24
+        oil, filter, & steering wheel cover                    41.00
+                                                             -------
+        Total expenses:                                      $$total
+
+    *Output:*
+
+        Original purchase                                    $900.00
+        Title, taxes, & late penalties                       $129.50
+                                                             -------
+                                                             $1029.5
+        Maintenance and repairs
+        -----------------------
+        tail lights, side mirrors, etc                         66.00
+        oil drain plug                                          3.24
+        oil, filter, & steering wheel cover                    41.00
+                                                             -------
+        Total expenses:                                      $1139.74
+
+
+    *[Sample file]*
+
+        Spreadsheet style layout
+
+        c1   c2   c3  c4  c5    Total
+        -----------------------------
+        10   20   30  40  =$c1 + $c4;  $row1=$total;  $total
+        100  200                       
+
+        row1 total: $row1  col1 total: $total1
+
+        total=$total  // All columns
+        
+    *Output:*
+
+        c1   c2   c3  c4  c5    Total
+        -----------------------------
+        10   20   30  40  50    150
+        100  200 
+
+        row1 total: 150  col1 total: 110
+
+        total=450
+
+    
+    The following is a simple example of how you might keep a bank ledger with
+    credit and debits in separate columns. 
+
+    *[Sample file]*
+
+        format = $%.2f
+
+        // Notice the '-' characters as place holders in fields 2 and 3 of the
+        // rows that have credits.  If I did not put something there, tcalc
+        // would see the credits as being in column 2, the same as debits,
+        // since the default field separator is 2 or more spaces.
+
+        Bank Ledger
+        ===========
+
+        Date        Debits                             Credits
+        ------------------------------------------------------
+        01/12/2009  -         -                        $200     opening balance
+        01/13/2009  $20.00    gas
+        01/13/2009  $32.50    groceries
+        01/15/2009  $15.35    Ate at Casa Bonita
+        01/18/2009  -         -                        $650.25  paycheck
+
+        ------------------------------------------------------
+        Total deposits:   $st4  # subtotals
+        Total withdrawls: $st2
+
+        Balance:  =$t4 - $t2;
+
+    *Output:*
+
+        Bank Ledger
+        ===========
+
+        Date        Debits                             Credits
+        ------------------------------------------------------
+        01/12/2009  -         -                        $200     opening balance
+        01/13/2009  $20.00    gas
+        01/13/2009  $32.50    groceries
+        01/15/2009  $15.35    Ate at Casa Bonita
+        01/18/2009  -         -                        $650.25  paycheck
+
+        ------------------------------------------------------
+        Total deposits:   $850.25
+        Total withdrawls: $67.85
+
+        Balance:  $782.40
+
+
+    Example of a simple single column approach if you only care about the
+    running balance.  As you can see, you can use $st2 (or $subtotal2) at the
+    end of the line to get the current total for column 2 without clearing it.
+
+
+    *[Sample file]*
+
+        format = $%.2f
+
+        Bank Ledger
+        ===========
+
+        Date          Transaction                       Running balance  
+        ---------------------------------------------------------------
+        01/12/2009    $200      opening balance         $st2
+        01/13/2009   -$20.00    gas                     $st2
+        01/13/2009   -$32.50    groceries
+        01/15/2009   -$15.35    Ate at Casa Bonita      $st2
+        01/18/2009    $650.25   paycheck
+                     --------
+        Balance:      $total
+
+    *Output:*
+
+        Bank Ledger
+        ===========
+
+        Date          Transaction                       Running balance  
+        ---------------------------------------------------------------
+        01/12/2009    $200      opening balance         $200.00
+        01/13/2009   -$20.00    gas                     $180.00
+        01/13/2009   -$32.50    groceries
+        01/15/2009   -$15.35    Ate at Casa Bonita      $132.15
+        01/18/2009    $650.25   paycheck
+                     --------
+        Balance:      $782.40
+
+
+*APPLICATION NOTES*
+    There are unlimited ways you can organize your ledgers.  For example, 
+    each expense category can be in a separate file.  Then if you want to
+    run a report on all or part of them, just cat the appropriate files and
+    pipe them to tcalc.
+
+    Example:
+        cat utilities food auto_expenses | tcalc
+
+    Or pass them in the correct order on the command line
+
+    Example:
+        tcalc utilities food auto_expenses
+
+    When files are concatenated, tcalc views them all as one input stream.
+    This allows variables between files to be shared, so you can combine
+    totals, etc.  Or run it on just one of the files to see the totals
+    for a single category, such as auto_expenses.
+
+    It is also simple to create expense categories by using variables.  For
+    example, you could keep a running total of tax deductible expenses by
+    adding to a variable anywhere they occur in the ledger.
+
+    Example:  
+        $deductibles += $total;
+
+    Then at the bottom of the file or in the last file (if using multiple
+    files) you might have something like
+
+        Total expenses: $total    Tax deductibles: $deductibles
+
+*AUTHOR*
+    Vincent Stemen
+
+*COPYRIGHT*
+    Copyright (c) 2009  Vincent Stemen
+    All rights reserved.
+

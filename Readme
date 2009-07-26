@@ -1,0 +1,25 @@
+
+Tcalc is a simple but flexible text based ledger/spreadsheet calculator.
+
+It allows you to create your own custom forms, ledgers, and spreadsheets as
+plain text files and to be able to do all your accounting using the full power
+of your favorite text editor.
+
+To install just type "make install".
+Then type "man tcalc" to read the manual.
+
+Requirements:
+    
+ * Perl 5 or greater.
+ * grutatxt  (optional)
+   http://triptico.com/software/grutatxt.html
+   grutatxt is only required to make the manual, tcalc.1, from the source
+   file, tcalc.man.  It comes pre-built, so grutatxt is only needed if you
+   modify the manual and need to re-generate it.
+
+
+Author: Vincent Stemen  <tcalc@hightek.org>
+
+To send email, the string "tcalc" must be in the subject or in the
+first 500 characters of the body of the message, or it will be rejected.
+

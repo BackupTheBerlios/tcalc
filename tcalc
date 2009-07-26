@@ -1,0 +1,298 @@
+#!/usr/bin/env perl
+#
+# tcalc - Text Calculator
+#
+# Calculates a plain text ledger or spreadsheet file and outputs 
+# the result to stdout.
+#
+# Copyright (c) 2009  Vincent Stemen
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+# ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+# OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+# LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+# OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+# SUCH DAMAGE.
+
+$REVISION = '$Id: Sun Jul 19 11:15:45 CDT 2009 $'; 
+
+
+sub usage()
+{
+#   $REVISION =~ /^\$Id: .+? (.*) .+? \$/;
+    $REVISION =~ /^\$Id: (.*) \$/;
+
+    my $rev = $1;
+
+    print <<EOM;
+
+tcalc -- Text Calculator
+
+Revision:  1.0 $rev
+Copyright (c) 2009  Vincent Stemen
+
+Tcalc is a ledger/spreadsheet calculator.  The file format is completely 
+flexible free-form text that can be edited with any text editor.  The
+input file[s] are processed as a stream and the results output to stdout.
+
+Usage:  tcalc file1 [file2 ...]
+        cat file1 [file2 ...] | tcalc
+
+EOM
+    exit(0);
+}
+
+
+# add($value)
+# Add the specified value to the totals
+#
+sub add($)
+{
+    my $n = shift;
+
+    $r[$row] += $n;     # row total
+    $t[$col] += $n;     # column total
+    $t += $n;           # total of all columns combined
+}
+
+
+# $formatted_number = $format_number($n, $format)
+# Returns the number $n, formated with the printf style format string, $format.
+# If $format has no value, then returns $n in it's original form.
+#
+sub format_number($$)
+{
+    if ($_[1]) { return(sprintf($_[1], $_[0])) }
+    else { return($_[0]) }
+}
+
+
+main:
+{
+    local $FS = "\\s{2,}|\\t+\\s*"; # Default field separator
+    local $Default_column='*';  # If no column is specified in the data file,
+                                # the default is *, which means to calculate
+                                # all columns.
+
+    local @t;               # Totals for each column.
+    local @r;               # Totals for each row.
+    local @c;               # List of columns (fields) on the current row.
+    local $t = 0;           # Current running total for all columns.
+    local $row = 0;         # Current row
+    local $col;             # Current column
+
+    my $full_line;          # The complete data line
+    my $field;              # A given field in $full_line during processing
+    my $format;             # printf style format string to display numbers
+    my $value;
+
+    if ($ARGV[0] =~ /--?h(elp)?/) { usage() }
+
+line:
+    while (<>)
+    {
+        # Reset the column and row total and go to the next row
+        $col = 1;
+        $row++;
+        $r[$row] = 0;
+
+        # Just print blank lines to stdout
+        if (/^$/) { print; next; }    
+
+        # Do not output comment only lines
+        if (/^\s*(\#|\/\/)/) { 
+            $r[$row] = 0; next; }    
+
+        s/\s*(\#|\/\/).*$//;               # Strip comments from the line
+        $full_line = $_;                   # Store the original raw line
+        s/\s*//;       # Strip white space from the beginning of the line
+
+        # The following settings may be placed on a line by them selves to
+        # modify the bahavior of tcalc.  They are not case sensitive.
+
+        # FS="..." strings in the file will re-define the field separator
+        if (/^\s*fs\s*=\s*(.+)/i)
+            {
+            $FS = $1;
+            # Remove quotes and slashes from within the string and
+            # extra spaces at the end of the line.
+            $FS =~ s/[\"\/]|\s+$//g;
+            next;
+            }
+
+        # COL=## or COLUMN=## sets the default column to calculate
+        if (/^\s*(col|column)\s*=\s*(\d+)\s*/i)
+            {
+            $Default_column = $2;
+            next;
+            }
+        # Just say column=  or column=* to reset the default column to all
+        elsif (/^\s*col|column\s*=\s*\*?\s*/i)
+            {
+            $Default_column = '*';
+            next;
+            }
+
+        # FORMAT="..." or NUMBER_FORMAT="..."
+        # printf style format string to display numbers
+        # Example: format = $%.2f  # Dollars and cents format
+        #          e.g. $100.00
+        #
+        if (/^\s*(?:number_)?format\s*=\s*(.*)/i)
+            {
+            $format = $1;
+            # If the format is not quoted, the strip trailing white space
+            if ($format =~ /["']/) { ($format) = $format =~ /["'](.*)["']/ } 
+            else { $format =~ s/\s+$// }
+            next;
+            }
+
+        # ---- End of settings
+
+      
+        # Split the line and zero $c[0].  The first field will be in $c[1].
+        @c = (0, split(/$FS/, $_));
+        $col = 1;
+        $r[$row] = 0;  
+
+        for (my $i=1; $_ = $c[$i]; $i++)
+            {
+            if (/\$.+;$/)      # Perl statement or expression
+                {
+                $field = quotemeta();
+
+                # If $total or $subtotal are used in an expression, then
+                # substitute the real variable name of $t before evaluating the
+                # expression.
+
+                if (/total[ =\[\d;]/)
+                    {
+                    s/\$(?:sub)?total([ =\[;])/\$t$1/g;  # $total | $total[#]
+                    s/\$(?:sub)?total(\d+[ =;])/\$t$1/g; # $total#
+                    }
+
+                # Add array brackets if omitted on the primary variables,
+                # @t, @r, and @c.
+                s/(\$[crt])(\d+)/$1\[$2\]/g;
+
+                # If the field begins with '=' then evaluate the expression
+                # and substitute it's value back into the field.
+
+                if (/^= ?(.*)/)
+                    {
+                    eval "\$value = $1";
+                    add($value);
+                    $c[$col] = $value;
+                    $value = format_number($value, $format); 
+                    $full_line =~ s/$field/$value/;
+                    }
+
+                # Otherwise, evaluate the expression then delete the field.
+                else
+                    {
+                    eval "$_";
+                    $full_line =~ s/$field//;
+                    if ($full_line =~ /^\s*$/) { next line }
+                    }
+                }
+
+            # Numerical value field
+            # Recognized formats: nn, nn.nn, $nn.nn, $ nn.nn, -nn, +nn
+            #                     -$nn.nn, n,nnn.nn
+            elsif (/^[+-]? ?\$? ?(\d+(,\d{3})*(\.\d+)?)$/)
+                {
+                $value = $1;
+                $value =~ s/,//g;  # Remove any commas
+
+                if (/^-/) { $value = -$value }
+                add($value);
+                }
+
+            # $total#, $total, $t, $t#,
+            # $subtotal#, $subtotal, $st, $st#
+            # Or, array brackets may be used around the index, e.g. $t[2]
+            # This field gets replaced with the total for the column specified
+            # by #.  If # is not specifed, it substitutes the total for the
+            # default column (which is all columns if the default is *).
+
+            elsif (/(\$(s|sub)? (t|total) (\[?(\d+)\]?)? $)/ix)
+                {
+                my $sub = $2;
+                my $col = $5;
+
+                $field = quotemeta($1);
+
+                if (! defined($col)) { $col = $Default_column }
+
+                # if expanding the total for a specific column
+                if ($col =~ /\d/)
+                    {
+                    $value = format_number($t[$col], $format);
+                    $full_line =~ s/$field/$value/;
+                    if (! $sub) { $t[$col] = 0; }
+                    }
+
+                # If the $total variable is specified on a line with other
+                # numbers in preceding fields, then expand to the current total
+                # for that row.
+
+                elsif ($r[$row]) 
+                    {
+                    $value = format_number($r[$row], $format);
+                    $full_line =~ s/$field/$value/;
+                    if (! $sub) { $r[$row] = 0 } 
+                    }
+
+                # If expanding to total for all columns
+                else
+                    {
+                    $value = format_number($t, $format); 
+                    $full_line =~ s/$field/$value/;
+                    if (! $sub) { $t = 0; }
+                    }
+                }
+
+            else
+                {
+                # If not a numerical field or an expression, then
+                # just expand any variables that are in the field.
+
+                $field = quotemeta();
+
+                while (/\$([[:alpha:]]\w*)/) 
+                    {
+                    if (defined($$1)) 
+                        { 
+                        $value = format_number($$1, $format); 
+                        s/\$$1/$value/;
+                        } 
+                    else {
+                        s/\$$1//; }
+                    }
+
+                $full_line =~ s/$field/$_/;
+                }
+
+            $col++;
+            }
+
+        if ($full_line !~ /\n$/) { $full_line .= "\n"; }
+        print "$full_line";
+    }
+}
+
