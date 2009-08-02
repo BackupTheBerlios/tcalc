@@ -29,8 +29,8 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-$REVISION = '$Id$';
-
+# $REVISION = '$Id$';
+$REVISION = '1.1';
 
 sub usage()
 {
@@ -293,9 +293,17 @@ line:
                     {
                     if (defined($$1)) 
                         { 
-                        $value = format_number($$1, $format); 
-                        s/\$$1/$value/;
-                        } 
+                        my $variable = $1;
+
+                        # If it's a number
+                        if ($$variable =~ /^\d+(?:\.\d+)?$/) 
+                            {
+                            $value = format_number($$variable, $format);
+                            s/\$$variable/$value/;
+                            }
+                        else {
+                            s/\$$variable/$$variable/; } 
+                        }
                     else {
                         s/\$$1//; }
                     }
