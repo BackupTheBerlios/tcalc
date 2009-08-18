@@ -14,7 +14,7 @@ all: ${manual}
 ${manual}: ${man_src}
 	grutatxt -m man -s 1 -t ${bin} < ${man_src} > ${manual}
 
-install::
+install: ${manual}
 	@if [ ! -d "${bin_dir}" ]; \
 	then \
 		echo "mkdir -p ${bin_dir}"; \
